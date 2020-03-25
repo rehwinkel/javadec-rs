@@ -1,0 +1,21 @@
+[package]
+name = "javadec-rs"
+version = "0.1.0"
+authors = ["Ian Rehwinkel <ian.rehwinkel@tutanota.com>"]
+edition = "2018"
+keywords = ["java"]
+license = "GPL-3.0-or-later"
+description = "A java decompiler written in pure rust."
+
+[workspace]
+members = [
+    "javaclass-rs"
+]
+
+[[bin]]
+name = "javadec"
+path = "src/main.rs"
+
+[dependencies]
+javaclass-rs = { path = "javaclass-rs/", version = "0.1.0" }
+serde_json = "1.0.48"
