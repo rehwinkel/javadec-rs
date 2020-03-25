@@ -1,10 +1,12 @@
 [package]
 name = "javaclass-rs"
 description = "A java class file parser written in pure rust."
-repository = "https://github.com/rehwinkel/javaclass-rs"
+repository = "https://github.com/rehwinkel/javadec-rs"
 version = "0.1.0"
 authors = ["Ian Rehwinkel <ian.rehwinkel@tutanota.com>"]
 edition = "2018"
+keywords = ["java"]
+license = "GPL-3.0-or-later"
 workspace = "../"
 
 [lib]
