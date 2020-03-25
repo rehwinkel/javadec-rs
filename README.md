@@ -1,4 +1,4 @@
-# javadec-rs
+# javadec-rs &emsp; [![Latest Version]][crates.io]
 
 [crates.io]: https://crates.io/crates/javadec-rs
 
