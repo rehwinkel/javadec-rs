@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;
 use std::error::Error;
@@ -148,20 +147,20 @@ fn read_u32<T: Read>(data: &mut T) -> Result<u32, ClassFileError> {
     Ok(r.to_be())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub enum ConstantPoolInfo {
     Class {
         name_index: u16,
     },
-    Fieldref {
+    FieldRef {
         class_index: u16,
         name_and_type_index: u16,
     },
-    Methodref {
+    MethodRef {
         class_index: u16,
         name_and_type_index: u16,
     },
-    InterfaceMethodref {
+    InterfaceMethodRef {
         class_index: u16,
         name_and_type_index: u16,
     },
@@ -201,9 +200,33 @@ pub enum ConstantPoolInfo {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ConstantPool {
     data: HashMap<u16, ConstantPoolInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstClassData {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstFieldData {
+    class: ConstClassData,
+    name_and_type: ConstNameTypeData,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstMethodData {
+    class: ConstClassData,
+    pub name_and_type: ConstNameTypeData,
+    is_interface: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstNameTypeData {
+    pub name: String,
+    pub descriptor: String,
 }
 
 impl ConstantPool {
@@ -222,6 +245,75 @@ impl ConstantPool {
             Err(ClassFileError::InvalidCPEntry)
         }
     }
+
+    pub fn get_class_entry(&self, index: u16) -> Result<ConstClassData, ClassFileError> {
+        if let ConstantPoolInfo::Class { name_index } = self.get_entry(index)? {
+            Ok(ConstClassData {
+                name: self.get_utf8_entry(name_index)?,
+            })
+        } else {
+            Err(ClassFileError::InvalidCPEntry)
+        }
+    }
+
+    pub fn get_name_type_entry(&self, index: u16) -> Result<ConstNameTypeData, ClassFileError> {
+        if let ConstantPoolInfo::NameAndType {
+            name_index,
+            descriptor_index,
+        } = self.get_entry(index)?
+        {
+            Ok(ConstNameTypeData {
+                name: self.get_utf8_entry(name_index)?,
+                descriptor: self.get_utf8_entry(descriptor_index)?,
+            })
+        } else {
+            Err(ClassFileError::InvalidCPEntry)
+        }
+    }
+
+    pub fn get_field_entry(&self, index: u16) -> Result<ConstFieldData, ClassFileError> {
+        if let ConstantPoolInfo::FieldRef {
+            class_index,
+            name_and_type_index,
+        } = self.get_entry(index)?
+        {
+            Ok(ConstFieldData {
+                class: self.get_class_entry(class_index)?,
+                name_and_type: self.get_name_type_entry(name_and_type_index)?,
+            })
+        } else {
+            Err(ClassFileError::InvalidCPEntry)
+        }
+    }
+
+    pub fn get_method_or_interface_entry(
+        &self,
+        index: u16,
+    ) -> Result<ConstMethodData, ClassFileError> {
+        match self.get_entry(index)? {
+            ConstantPoolInfo::MethodRef {
+                class_index,
+                name_and_type_index,
+            } => Ok(ConstMethodData {
+                class: self.get_class_entry(class_index)?,
+                name_and_type: self.get_name_type_entry(name_and_type_index)?,
+                is_interface: false,
+            }),
+            ConstantPoolInfo::InterfaceMethodRef {
+                class_index,
+                name_and_type_index,
+            } => Ok(ConstMethodData {
+                class: self.get_class_entry(class_index)?,
+                name_and_type: self.get_name_type_entry(name_and_type_index)?,
+                is_interface: true,
+            }),
+            _ => Err(ClassFileError::InvalidCPEntry),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 fn read_constant_pool<T: Read>(data: &mut T) -> Result<ConstantPool, ClassFileError> {
@@ -234,15 +326,15 @@ fn read_constant_pool<T: Read>(data: &mut T) -> Result<ConstantPool, ClassFileEr
             7 => ConstantPoolInfo::Class {
                 name_index: read_u16(data)?,
             },
-            9 => ConstantPoolInfo::Fieldref {
+            9 => ConstantPoolInfo::FieldRef {
                 class_index: read_u16(data)?,
                 name_and_type_index: read_u16(data)?,
             },
-            10 => ConstantPoolInfo::Methodref {
+            10 => ConstantPoolInfo::MethodRef {
                 class_index: read_u16(data)?,
                 name_and_type_index: read_u16(data)?,
             },
-            11 => ConstantPoolInfo::InterfaceMethodref {
+            11 => ConstantPoolInfo::InterfaceMethodRef {
                 class_index: read_u16(data)?,
                 name_and_type_index: read_u16(data)?,
             },
@@ -306,7 +398,7 @@ fn read_constant_pool<T: Read>(data: &mut T) -> Result<ConstantPool, ClassFileEr
     })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ClassAccessFlags {
     pub acc_public: bool,
     pub acc_final: bool,
@@ -341,7 +433,7 @@ fn read_interfaces<T: Read>(data: &mut T) -> Result<Vec<u16>, ClassFileError> {
     Ok(interaces_result?)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ExceptionTableInfo {
     start_pc: u16,
     end_pc: u16,
@@ -349,7 +441,7 @@ pub struct ExceptionTableInfo {
     catch_type: u16,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum AttributeInfo {
     Raw {
         attribute_name: String,
@@ -379,8 +471,8 @@ fn read_attributes<T: Read>(
 
     for _ in 0..attributes_count {
         let attribute_name_index = read_u16(data)?;
-        let attribute_length = read_u32(data)?;
         let attribute_name = constant_pool.get_utf8_entry(attribute_name_index)?;
+        let attribute_length = read_u32(data)?;
 
         let attribute = match attribute_name.as_str() {
             "ConstantValue" => AttributeInfo::ConstantValue {
@@ -432,7 +524,7 @@ fn read_attributes<T: Read>(
     Ok(attributes)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct FieldAccessFlags {
     pub acc_public: bool,
     pub acc_private: bool,
@@ -460,7 +552,7 @@ fn read_field_access_flags<T: Read>(data: &mut T) -> Result<FieldAccessFlags, Cl
     })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct FieldInfo {
     pub access_flags: FieldAccessFlags,
     pub name_index: u16,
@@ -490,7 +582,7 @@ fn read_fields<T: Read>(
     Ok(fields)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct MethodAccessFlags {
     pub acc_public: bool,
     pub acc_private: bool,
@@ -524,7 +616,7 @@ fn read_method_access_flags<T: Read>(data: &mut T) -> Result<MethodAccessFlags, 
     })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct MethodInfo {
     pub access_flags: MethodAccessFlags,
     pub name_index: u16,
@@ -554,7 +646,7 @@ fn read_methods<T: Read>(
     Ok(methods)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ClassFile {
     pub major_version: u16,
     pub minor_version: u16,

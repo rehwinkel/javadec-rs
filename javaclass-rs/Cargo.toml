@@ -14,4 +14,3 @@ name = "javaclass"
 path = "src/lib.rs"
 
 [dependencies]
-serde = { version = "1.0.105", features = ["derive"] }

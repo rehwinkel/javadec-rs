@@ -17,6 +17,11 @@ members = [
 name = "javadec"
 path = "src/main.rs"
 
+[lib]
+name = "javadec"
+path = "src/lib.rs"
+
 [dependencies]
 javaclass-rs = { path = "javaclass-rs/", version = "0.1.0" }
-serde_json = "1.0.48"
+zip = "0.5.5"
+clap = "2.33.0"

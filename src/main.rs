@@ -1,94 +1,89 @@
-use javaclass::{ClassFile, ClassFileError, FieldAccessFlags, MethodAccessFlags};
+extern crate javadec;
+
+use clap::{App, Arg, ArgMatches};
+use std::error::Error;
+use std::fmt::Display;
 use std::fs::File;
+use std::io::Read;
 
-fn field_flags_as_modifiers(flags: &FieldAccessFlags) -> String {
-    let mut modifiers = String::new();
-
-    if flags.acc_public {
-        modifiers += "public ";
-    }
-    if flags.acc_protected {
-        modifiers += "protected ";
-    }
-    if flags.acc_private {
-        modifiers += "private ";
-    }
-    if flags.acc_static {
-        modifiers += "static ";
-    }
-    if flags.acc_final {
-        modifiers += "final ";
-    }
-    if flags.acc_transient {
-        modifiers += "transient ";
-    }
-    if flags.acc_volatile {
-        modifiers += "volatile ";
-    }
-    modifiers
+#[derive(Debug)]
+struct ContextError {
+    error: Box<dyn Error>,
+    context: String,
 }
 
-fn method_flags_as_modifiers(flags: &MethodAccessFlags) -> String {
-    let mut modifiers = String::new();
+impl Error for ContextError {}
 
-    if flags.acc_public {
-        modifiers += "public ";
+impl Display for ContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}: {}", self.context, self.error)
     }
-    if flags.acc_protected {
-        modifiers += "protected ";
-    }
-    if flags.acc_private {
-        modifiers += "private ";
-    }
-    if flags.acc_abstract {
-        modifiers += "abstract ";
-    }
-    if flags.acc_static {
-        modifiers += "static ";
-    }
-    if flags.acc_final {
-        modifiers += "final ";
-    }
-    if flags.acc_synchronized {
-        modifiers += "synchronized ";
-    }
-    if flags.acc_native {
-        modifiers += "native ";
-    }
-    if flags.acc_strict {
-        modifiers += "strict ";
-    }
-    modifiers
 }
 
-fn decompile(class: ClassFile) -> Result<(), ClassFileError> {
-    println!("{}", serde_json::to_string_pretty(&class).unwrap());
-    /*for field in class.fields {
-        let descriptor = class.constant_pool.get_utf8_entry(field.descriptor_index)?;
-        let name = class.constant_pool.get_utf8_entry(field.name_index)?;
-        println!(
-            "{}{} {}",
-            field_flags_as_modifiers(&field.access_flags),
-            descriptor,
-            name
-        );
+trait ToContextError<T, E> {
+    fn context_err(self, context: &str) -> Result<T, ContextError>
+    where
+        E: Error + Send + Sync + 'static;
+}
+
+impl<T, E> ToContextError<T, E> for Result<T, E> {
+    fn context_err(self, context: &str) -> Result<T, ContextError>
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        match self {
+            Ok(val) => Ok(val),
+            Err(e) => Err(ContextError {
+                error: Box::new(e),
+                context: String::from(context),
+            }),
+        }
     }
-    for method in class.methods {
-        let descriptor = class.constant_pool.get_utf8_entry(method.descriptor_index)?;
-        let name = class.constant_pool.get_utf8_entry(method.name_index)?;
-        println!(
-            "{}{} {}",
-            method_flags_as_modifiers(&method.access_flags),
-            descriptor,
-            name
-        );
-    }*/
+}
+
+fn run(matches: ArgMatches) -> Result<(), ContextError> {
+    for val in matches
+        .values_of("INPUT")
+        .expect("missing required argument")
+    {
+        let mut file = File::open(val).context_err(val)?;
+        if val.ends_with(".jar") {
+            let mut archive = zip::ZipArchive::new(file).context_err(val)?;
+            for i in 0..archive.len() {
+                let mut zfile = archive.by_index(i).context_err(val)?;
+                println!("{}", zfile.name());
+                if zfile.name().ends_with(".class") {
+                    let mut full = Vec::new();
+                    zfile.read_to_end(&mut full).context_err(val)?;
+                    let mut data = std::io::Cursor::new(full);
+                    let classfile = javaclass::read_classfile(&mut data).context_err(val)?;
+                    javadec::decompile(classfile).context_err(val)?;
+                }
+            }
+        } else {
+            let classfile = javaclass::read_classfile(&mut file).context_err(val)?;
+            javadec::decompile(classfile).context_err(val)?;
+        }
+    }
     Ok(())
 }
 
-fn main() -> Result<(), ClassFileError> {
-    let mut file = File::open("testdata/Particle.class").unwrap();
-    let class_file: ClassFile = javaclass::read_classfile(&mut file)?;
-    decompile(class_file)?;
-    Ok(())
+fn main() {
+    let name = "javadec";
+    let matches = App::new(name)
+        .version("0.1.0")
+        .author("Ian Rehwinkel <ian.rehwinkel@tutanota.com>")
+        .about("Java 8 decompiler")
+        .arg(
+            Arg::with_name("INPUT")
+                .required(true)
+                .multiple(true)
+                .help("Files to be decompiled (.jar or .class)"),
+        )
+        .get_matches();
+
+    match run(matches) {
+        Err(e) => eprintln!("{}: {}", name, e),
+        Ok(_) => {}
+    }
 }
